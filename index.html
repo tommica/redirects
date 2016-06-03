@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>301 Redirecter</title>
+
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+</head>
+<body style="padding-bottom: 40px;">
+
+<div class="container">
+
+    <div class="row">
+        <div class="col-md-10">
+            <h3>301 Redirecter (original is here: http://www.42designs.com/redirect.html)</h3>
+        </div>
+        <div class="col-me-2">
+            <a style="margin-top: 20px;" class="btn btn-primary" href="/" role="button">Home</a>
+        </div>
+    </div>
+
+	<div class="row">
+		<div class="col-md-12">
+			<ul>
+				<li>
+					Domain example: http://domain.com.
+				</li>
+				<li>
+					You can leave the domain in all From and To items.
+				</li>
+				<li>
+					Works where the to domain is different than the from domain.
+				</li>
+				<li>
+					Each redirect must be on it's own line with no blank lines anywhere.
+				</li>
+				<li>
+					If there are two or more %20 beside each other, the test data will replace them all with only one space.
+				</li>
+				<li>
+					If the redirect to has a '#', you need to manually add NE to the rules flags.
+				</li>
+			</ul>
+		</div>
+	</div>
+    <br>
+
+	<div class="row">
+		<div class="col-md-8 col-md-offset-2">
+			<form>
+				<p>Domain<input type="text" id="theURL" style="width: 300px"></p>
+				<p>From</p>
+				<textarea rows="20" cols="100" id="from-box"></textarea>
+				<br><br>
+				<p>To</p>
+				<textarea rows="20" cols="100" id="to-box"></textarea>
+				<br><br>
+				<button id="do-it">Do it!</button>
+			</form>
+		</div>
+	</div>
+
+
+	<div class="row">
+		<div class="col-md-12">
+			<br><br>
+			<h3>The Rewrites</h3>
+			<div id="results"></div>
+
+			<br><br>
+			<h3>The Test Data</h3>
+			<div id="testdata"></div>
+		</div>
+	</div>
+
+</div>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+<script>
+
+    $('#do-it').click( function(e){
+        e.preventDefault();
+
+        //get form data
+        var fromArray = $('#from-box').val().split("\n");// each line is an array item
+        var toArray = $('#to-box').val().split("\n");
+        var theURL = $('#theURL').val();
+
+        // create testingDataArray so testing data can be manipulated before the outputData[1] string is created
+        var testingDataArray = [];
+        $.each(fromArray, function(i) {
+            testingDataArray.push(fromArray[i] + ',' + toArray[i]);
+        });
+
+        // merge form lists and testingDataArray using underscore function
+        var listsArray = _.zip(fromArray, toArray, testingDataArray);
+
+        //outputData[0] is the redirects, outputData[1] is the testdata.  each is a giant string.
+        var outputData = [];
+        // need to set values to nothing or I get 'undefined' at beginning of strings
+        outputData[0] = '';
+        outputData[1] = '';
+
+        // This is the main function that does everything.
+        outputData = buildDataFiles(listsArray, theURL, outputData);
+
+        // output data to screen
+//		$("#results").empty().append('<xmp>' + outputData[0] + '</xmp>'); /* todo: xmp tag needs to be added to each line so br tags still work */
+		$("#results").empty().append(outputData[0]);
+        $("#testdata").empty().append(outputData[1]);
+
+    });
+
+    /*
+    * This is the main function.  It returns the outputData array with all the rewrite and test data
+    * stored as big strings.
+    * */
+    function  buildDataFiles(listsArray, theURL, outputData)
+    {
+        // perform tests/operations on each array item.
+        // new tests/functions can be added here
+        $.each(listsArray, function(i) {
+            // First are the functions that edit listsArray but do not make a redirect
+            // ex. converting '%20' to '\ '
+            // these functions take the row and need to return it to be saved back into listsArray
+            listsArray[i] = stripURL(listsArray[i], theURL);
+            listsArray[i] = convertURLEncodedChars(listsArray[i]);
+
+            // Second section pulls data out of listArrays and builds a redirect.
+            // for unique situations. ex. when there is a QUERY_STRING
+            // these functions take the entire array, id, and outputData
+            redirectWithQueryString(listsArray, i, outputData);
+
+        });
+
+        // needed to remove any array rows that were zeroed out from functions in the $.each loop above.
+        listsArray = removeEmptyRows(listsArray);
+
+        //  Last is the grouping section because it mashes the data quite bad.
+        groupProcessRemainingRedirects(listsArray, outputData);
+
+        return outputData;
+    }
+
+    /*
+    * Replaces URL Encoded Characters with what is required for the rewrite and the testdata.
+    * Can be added to by repeating code inside.
+    * */
+    function convertURLEncodedChars(listsArrayRow)
+    {
+		//if there is a %20 in the query string, it must stay there.  Replace elsewhere though.
+		if(listsArrayRow[0].indexOf('?') >= 0 ) {// if there's a ? in the 'from' string
+			//get substring from 0 to '?'
+			var substring = listsArrayRow[0].substring(0, listsArrayRow[0].indexOf('?'));
+
+			//do replace on substring
+			substring = substring.replace(/%20/g, '\\ '); // need to escape the backslash
+
+			//insert substring back into string
+			listsArrayRow[0] = substring + listsArrayRow[0].substring(listsArrayRow[0].indexOf('?'), listsArrayRow[0].length); // substring + ('?' to end of string)
+		} else {
+			listsArrayRow[0] = listsArrayRow[0].replace(/%20/g, '\\ '); // changes the 'from' data. need to escape the backslash
+		}
+
+        // Comment this out because the %20 still needs to be in test data.  Left here as example of how to
+        // manipulate the test data though (array position, etc).
+        // listsArrayRow[2] = listsArrayRow[2].replace(/%20/g, " "); // changes the test data
+        listsArrayRow[0] = listsArrayRow[0].replace(/\$/g, '\\$'); // changes the 'from' data. need to escape the backslash
+		listsArrayRow[0] = listsArrayRow[0].replace(/\./g, '\\.'); // changes the 'from' data. need to escape the backslash
+		listsArrayRow[0] = listsArrayRow[0].replace(/\+/g, '\\+'); // changes the 'from' data. need to escape the backslash
+		listsArrayRow[0] = listsArrayRow[0].replace(/\)/g, '\\)'); // changes the 'from' data. need to escape the backslash
+		listsArrayRow[0] = listsArrayRow[0].replace(/\(/g, '\\('); // changes the 'from' data. need to escape the backslash
+		listsArrayRow[0] = listsArrayRow[0].replace(/\,/g, '\\,'); // changes the 'from' data. need to escape the backslash
+
+		// special case: escape '?' only if it's the last character in the fromURL
+		if(listsArrayRow[0][listsArrayRow[0].length - 1] == '?') { // string is an array of characters, get last one (.length -1)
+			listsArrayRow[0] = listsArrayRow[0].replace(/\?/g, '\\?'); // changes the 'from' data. need to escape the backslash
+		}
+
+        return listsArrayRow;
+    }
+
+    /*
+    * This removes all instances of the url entered in the form from the "from" and "to" lists.
+    * Also removes leading '/' from 'from' list.
+    * Will break for url's where exact domain is listed twice.  "http://foo.bar/http://foo.bar/something"
+    * */
+    function stripURL(listsArrayRow, theURL)
+    {
+        listsArrayRow[0] = listsArrayRow[0].replace(theURL + '\/', ''); // need to escape the backslash
+        listsArrayRow[1] = listsArrayRow[1].replace(theURL, '');
+
+        return listsArrayRow;
+    }
+
+    /*
+    * This function creates a redirect and testdata and saves it to outputData.  It then
+    * makes the listsArray row equal to '' (nothing).  I cannot remove the row from the array yet because
+    * it messes up the $.each loop in buildDataFiles().
+    * This specific function creates redirects when there is a '?' in the url.
+    * */
+    function redirectWithQueryString(listsArray, i, outputData)
+    {
+        if(listsArray[i][0].indexOf('?') >= 0 ) {// if there's a ? in the 'from' string
+			if(listsArray[i][0].substring(listsArray[i][0].indexOf('?') + 1, listsArray[i][0].length).length >= 1) { // if there are characters after the '?'
+				//console.log(listsArray[i][0]);
+
+				// create variables
+				var rewrite = '<br>';  // start rewrite with a blank line
+				var theURI = listsArray[i][0].substring(0, listsArray[i][0].indexOf('?')); // gets from the beginning to just before the '?' of from string
+				var theQuery = listsArray[i][0].substring(listsArray[i][0].indexOf('?') + 1, listsArray[i][0].length); // gets from just after the '?' to the end of the from string
+				var theFlags = '';
+
+				// if redirect to url has a ?, don't add one to RewriteRule.
+				if (listsArray[i][1].indexOf('?') >= 0) {
+					theFlags = " [R=301,NC,L]<br>";
+				} else {
+					theFlags = "? [R=301,NC,L]<br>";
+				}
+
+				// create rewrite string
+				rewrite += "RewriteCond %{REQUEST_URI} ^/" + theURI + '<br>';
+				rewrite += "RewriteCond %{QUERY_STRING} " + theQuery + '<br>';
+				rewrite += "RewriteRule ^(.*)$ " + listsArray[i][1] + theFlags;
+
+				// add rewrite to outputData
+				outputData[0] += rewrite;
+
+				// add testData to outputData
+				outputData[1] += listsArray[i][2] + '<br>';
+
+				// erase data from listsArray row because it is finished
+				// cant remove the row completely because it messes up the $.each loop in buildDataFiles. bullshit
+				listsArray[i][0] = '';
+				listsArray[i][1] = '';
+				listsArray[i][2] = '';
+
+				//console.log(listsArray);
+			}
+        }
+    }
+
+    /*
+    * Takes remaining data in listsArray and groups them.  Creates single and grouped redirects.
+    * Saves everything to outputData
+    * */
+    function groupProcessRemainingRedirects(listsArray, outputData)
+    {
+        var bulkList = '';
+        var singlesList = '<br>';
+
+        //group by destination (the 'to' form field). uses underscore's groupBy function
+        var groupedList = _.groupBy(listsArray, function(innerArray){return innerArray[1]});
+
+        //find cases where the destination has several sources.  make into one redirect. else make regular redirect
+        $.each(groupedList, function(i) {
+            if (groupedList[i].length > 1) { //if more than one source going to the same destination
+                var bulk301 = '<br>';  //start with a new line
+
+                // this creates the rewrite conditions
+                $.each(groupedList[i], function (j) {
+                    bulk301 += "RewriteCond %{REQUEST_URI} ^/" + groupedList[i][j][0] + "$";  //look at console.log(groupedList) to understand array structure.
+
+                    // add [OR] unless it's the last one.
+                    if (j < groupedList[i].length - 1) {
+                        bulk301 += " [OR]<br>"
+                    } else {
+                        bulk301 += "<br>";
+                    }
+                });
+
+                // this creates the rewrite rule
+                bulk301 += "RewriteRule ^(.*)$ " + groupedList[i][0][1] + " [R=301,NC,L]<br>";
+
+                // append rewrite to list
+                bulkList += bulk301;
+            } else {
+                //append single rule to singlesList
+                singlesList += "RewriteRule ^"  + groupedList[i][0][0] + "$ "+ groupedList[i][0][1] + " [R=301,NC,L]<br>";
+            }
+        });
+
+        // add singles and bulk lists to outputData
+        outputData[0] += bulkList + singlesList;
+
+        // add testdata to outputData
+        $.each(listsArray, function(i) {
+            outputData[1] += listsArray[i][2] + '<br>';
+        });
+    }
+
+    /*
+    * Just removes any blamk array rows from the array
+    * */
+    function removeEmptyRows(array)
+    {
+        var newArray = [];
+        $.each(array, function(i) {
+            if (array[i][0] != "") {
+                newArray.push(array[i]);
+            }
+        });
+
+        return newArray;
+    }
+
+</script>
+</body>
+</html>
